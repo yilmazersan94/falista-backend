@@ -101,24 +101,23 @@ Sen "Falista" adlı bir mobil uygulama için çalışan bir fal motorusun. Foto�
         }.ifBlank { null }
 
         return runCatching {
-            val systemMessage = ResponseMessageInput(
-                role = "system",
-                content = listOf(ResponseContentInput(type = "input_text", text = systemPrompt))
-            )
             val userContents = buildList {
+                if (!userContext.isNullOrBlank()) {
+                    add(ResponseContentInput(type = "input_text", text = userContext))
+                }
                 add(
                     ResponseContentInput(
                         type = "input_image",
-                        imageUrl = "data:${req.mimeType};base64,${req.imageBase64}"
+                        imageUrl = ImageUrl(url = "data:${req.mimeType};base64,${req.imageBase64}", detail = "high")
                     )
                 )
-                if (userContext != null) add(ResponseContentInput(type = "input_text", text = userContext))
             }
             val userMessage = ResponseMessageInput(role = "user", content = userContents)
 
             val payload = ResponsesRequest(
                 model = model,
-                input = listOf(systemMessage, userMessage),
+                input = listOf(userMessage),
+                instructions = systemPrompt,
                 maxOutputTokens = 800
             )
 
@@ -148,6 +147,7 @@ Sen "Falista" adlı bir mobil uygulama için çalışan bir fal motorusun. Foto�
 data class ResponsesRequest(
     val model: String,
     val input: List<ResponseMessageInput>,
+    val instructions: String,
     @SerialName("max_output_tokens") val maxOutputTokens: Int
 )
 
@@ -161,7 +161,13 @@ data class ResponseMessageInput(
 data class ResponseContentInput(
     val type: String,
     val text: String? = null,
-    @SerialName("image_url") val imageUrl: String? = null
+    @SerialName("image_url") val imageUrl: ImageUrl? = null
+)
+
+@Serializable
+data class ImageUrl(
+    val url: String,
+    val detail: String = "high"
 )
 
 @Serializable
