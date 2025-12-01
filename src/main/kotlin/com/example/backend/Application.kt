@@ -43,11 +43,7 @@ fun Application.module() {
         post("/generate-fal") {
             val req = call.receive<GenerateFalRequest>()
             val result = openAi.generateFal(req)
-            if (result.success) {
-                call.respond(result)
-            } else {
-                call.respond(result.copy(success = false))
-            }
+            call.respond(result)
         }
     }
 }
@@ -72,7 +68,7 @@ class OpenAiClient(
     private val json: Json
 ) {
     private val systemPrompt = """
-Sen "Falista" adlı bir mobil uygulama için çalışan fal motorusun. Fotoğraf ve kullanıcının notuna dayanarak pozitif, nazik, akıcı ve Türkçe bir fal yaz. Ölüm, hastalık, kara kehanet yok. 120-220 kelime arası uzun, hikâye gibi yaz.
+Sen "Falista" adlı bir mobil uygulama için çalışan bir fal motorusun. Fotoğraftan ve varsa kullanıcı notundan yola çıkarak pozitif, nazik, akıcı ve Türkçe bir fal yaz. Ölüm, hastalık, kara kehanet yok. 120-220 kelime arası, hikâye gibi uzun yaz.
 """.trimIndent()
 
     private val model = "gpt-5.1"
@@ -97,6 +93,11 @@ Sen "Falista" adlı bir mobil uygulama için çalışan fal motorusun. Fotoğraf
             return GenerateFalResponse(success = false, error = "imageBase64 is required")
         }
 
+        val userContext = buildString {
+            if (!req.userNote.isNullOrBlank()) append("Kullanıcı notu: ${req.userNote}. ")
+            if (!req.date.isNullOrBlank()) append("Tarih: ${req.date}.")
+        }.ifBlank { null }
+
         return runCatching {
             val payload = ResponsesRequest(
                 model = model,
@@ -108,12 +109,8 @@ Sen "Falista" adlı bir mobil uygulama için çalışan fal motorusun. Fotoğraf
                             url = "data:${req.mimeType};base64,${req.imageBase64}",
                             detail = "high"
                         )
-                    ),
-                    InputBlock(
-                        type = "input_text",
-                        text = "Kullanıcı notu: ${req.userNote ?: "not yok"}. Tarih: ${req.date ?: "belirtilmedi"}."
                     )
-                ),
+                ) + listOfNotNull(userContext?.let { ctx -> InputBlock(type = "input_text", text = ctx) }),
                 maxOutputTokens = 800
             )
 
@@ -124,9 +121,9 @@ Sen "Falista" adlı bir mobil uygulama için çalışan fal motorusun. Fotoğraf
             }
             val body: ResponsesResponse = response.body()
             val fortune = body.output
+                ?.flatMap { it.content.orEmpty() }
                 ?.firstOrNull { it.type == "output_text" }
                 ?.text
-                ?: body.output?.firstOrNull()?.text
                 ?: "Fal üretilemedi."
             GenerateFalResponse(success = true, fortuneText = fortune)
         }.getOrElse { ex ->
@@ -152,16 +149,22 @@ data class InputBlock(
 @Serializable
 data class ImageUrl(
     val url: String,
-    val detail: String = "auto"
+    val detail: String = "high"
 )
 
 @Serializable
 data class ResponsesResponse(
-    val output: List<OutputBlock>? = null
+    val output: List<ResponseMessage>? = null
 )
 
 @Serializable
-data class OutputBlock(
+data class ResponseMessage(
+    val role: String? = null,
+    val content: List<ResponseContent>? = null
+)
+
+@Serializable
+data class ResponseContent(
     val type: String,
     val text: String? = null
 )
