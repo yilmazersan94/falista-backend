@@ -9,6 +9,7 @@ import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
@@ -99,18 +100,27 @@ Sen "Falista" adlı bir mobil uygulama için çalışan bir fal motorusun. Foto�
         }.ifBlank { null }
 
         return runCatching {
-            val payload = ResponsesRequest(
-                model = model,
-                input = listOf(
-                    InputBlock(type = "input_text", text = systemPrompt),
-                    InputBlock(
+            val systemMessage = ResponseMessageInput(
+                role = "system",
+                content = listOf(ResponseContentInput(type = "input_text", text = systemPrompt))
+            )
+            val userContents = buildList {
+                add(
+                    ResponseContentInput(
                         type = "input_image",
                         imageUrl = ImageUrl(
                             url = "data:${req.mimeType};base64,${req.imageBase64}",
                             detail = "high"
                         )
                     )
-                ) + listOfNotNull(userContext?.let { ctx -> InputBlock(type = "input_text", text = ctx) }),
+                )
+                if (userContext != null) add(ResponseContentInput(type = "input_text", text = userContext))
+            }
+            val userMessage = ResponseMessageInput(role = "user", content = userContents)
+
+            val payload = ResponsesRequest(
+                model = model,
+                input = listOf(systemMessage, userMessage),
                 maxOutputTokens = 800
             )
 
@@ -118,6 +128,10 @@ Sen "Falista" adlı bir mobil uygulama için çalışan bir fal motorusun. Foto�
                 contentType(ContentType.Application.Json)
                 headers.append("Authorization", "Bearer $apiKey")
                 setBody(payload)
+            }
+            if (!response.status.isSuccess()) {
+                val raw = response.bodyAsText()
+                throw IllegalStateException("OpenAI ${response.status.value}: $raw")
             }
             val body: ResponsesResponse = response.body()
             val fortune = body.output
@@ -135,12 +149,18 @@ Sen "Falista" adlı bir mobil uygulama için çalışan bir fal motorusun. Foto�
 @Serializable
 data class ResponsesRequest(
     val model: String,
-    val input: List<InputBlock>,
+    val input: List<ResponseMessageInput>,
     @SerialName("max_output_tokens") val maxOutputTokens: Int
 )
 
 @Serializable
-data class InputBlock(
+data class ResponseMessageInput(
+    val role: String,
+    val content: List<ResponseContentInput>
+)
+
+@Serializable
+data class ResponseContentInput(
     val type: String,
     val text: String? = null,
     @SerialName("image_url") val imageUrl: ImageUrl? = null
