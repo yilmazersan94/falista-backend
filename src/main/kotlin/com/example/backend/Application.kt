@@ -13,8 +13,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
-import io.ktor.server.application.install
 import io.ktor.server.application.call
+import io.ktor.server.application.install
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation as ServerContentNegotiation
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -75,7 +75,7 @@ class OpenAiClient(
 Sen "Falista" adlı bir mobil uygulama için çalışan fal motorusun. Fotoğraf ve kullanıcının notuna dayanarak pozitif, nazik, akıcı ve Türkçe bir fal yaz. Ölüm, hastalık, kara kehanet yok. 120-220 kelime arası uzun, hikâye gibi yaz.
 """.trimIndent()
 
-    private val model = "gpt-4o-mini"
+    private val model = "gpt-5.1"
 
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) { json(json) }
@@ -98,43 +98,35 @@ Sen "Falista" adlı bir mobil uygulama için çalışan fal motorusun. Fotoğraf
         }
 
         return runCatching {
-            val payload = ChatRequest(
+            val payload = ResponsesRequest(
                 model = model,
-                maxTokens = 800,
-                messages = listOf(
-                    ChatMessage(
-                        role = "system",
-                        content = listOf(ContentPart(type = "text", text = systemPrompt))
-                    ),
-                    ChatMessage(
-                        role = "user",
-                        content = listOf(
-                            ContentPart(
-                                type = "image_url",
-                                imageUrl = ImageUrl(url = "data:${req.mimeType};base64,${req.imageBase64}")
-                            ),
-                            ContentPart(
-                                type = "text",
-                                text = "Kullanıcı notu: ${req.userNote ?: "not yok"}. Tarih: ${req.date ?: "belirtilmedi"}."
-                            )
+                input = listOf(
+                    InputBlock(type = "input_text", text = systemPrompt),
+                    InputBlock(
+                        type = "input_image",
+                        imageUrl = ImageUrl(
+                            url = "data:${req.mimeType};base64,${req.imageBase64}",
+                            detail = "high"
                         )
+                    ),
+                    InputBlock(
+                        type = "input_text",
+                        text = "Kullanıcı notu: ${req.userNote ?: "not yok"}. Tarih: ${req.date ?: "belirtilmedi"}."
                     )
-                )
+                ),
+                maxOutputTokens = 800
             )
 
-            val response = client.post("https://api.openai.com/v1/chat/completions") {
+            val response = client.post("https://api.openai.com/v1/responses") {
                 contentType(ContentType.Application.Json)
                 headers.append("Authorization", "Bearer $apiKey")
                 setBody(payload)
             }
-            val body: ChatResponse = response.body()
-            val fortune = body.choices
-                ?.firstOrNull()
-                ?.message
-                ?.content
-                ?.mapNotNull { it.text }
-                ?.joinToString(" ")
-                ?.ifBlank { null }
+            val body: ResponsesResponse = response.body()
+            val fortune = body.output
+                ?.firstOrNull { it.type == "output_text" }
+                ?.text
+                ?: body.output?.firstOrNull()?.text
                 ?: "Fal üretilemedi."
             GenerateFalResponse(success = true, fortuneText = fortune)
         }.getOrElse { ex ->
@@ -144,20 +136,14 @@ Sen "Falista" adlı bir mobil uygulama için çalışan fal motorusun. Fotoğraf
 }
 
 @Serializable
-data class ChatRequest(
+data class ResponsesRequest(
     val model: String,
-    val messages: List<ChatMessage>,
-    @SerialName("max_tokens") val maxTokens: Int
+    val input: List<InputBlock>,
+    @SerialName("max_output_tokens") val maxOutputTokens: Int
 )
 
 @Serializable
-data class ChatMessage(
-    val role: String,
-    val content: List<ContentPart>
-)
-
-@Serializable
-data class ContentPart(
+data class InputBlock(
     val type: String,
     val text: String? = null,
     @SerialName("image_url") val imageUrl: ImageUrl? = null
@@ -165,20 +151,17 @@ data class ContentPart(
 
 @Serializable
 data class ImageUrl(
-    val url: String
+    val url: String,
+    val detail: String = "auto"
 )
 
 @Serializable
-data class ChatResponse(
-    val choices: List<Choice>? = null
+data class ResponsesResponse(
+    val output: List<OutputBlock>? = null
 )
 
 @Serializable
-data class Choice(
-    val message: ChatMessageResponse? = null
-)
-
-@Serializable
-data class ChatMessageResponse(
-    val content: List<ContentPart> = emptyList()
+data class OutputBlock(
+    val type: String,
+    val text: String? = null
 )
