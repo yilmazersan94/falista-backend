@@ -1,0 +1,7 @@
+# Ignore local secrets and build outputs
+.env
+.gradle/
+build/
+out/
+*.iml
+*.log
