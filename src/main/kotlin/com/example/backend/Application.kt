@@ -109,10 +109,7 @@ Sen "Falista" adlı bir mobil uygulama için çalışan bir fal motorusun. Foto�
                 add(
                     ResponseContentInput(
                         type = "input_image",
-                        imageUrl = ImageUrl(
-                            url = "data:${req.mimeType};base64,${req.imageBase64}",
-                            detail = "high"
-                        )
+                        imageUrl = "data:${req.mimeType};base64,${req.imageBase64}"
                     )
                 )
                 if (userContext != null) add(ResponseContentInput(type = "input_text", text = userContext))
@@ -164,13 +161,7 @@ data class ResponseMessageInput(
 data class ResponseContentInput(
     val type: String,
     val text: String? = null,
-    @SerialName("image_url") val imageUrl: ImageUrl? = null
-)
-
-@Serializable
-data class ImageUrl(
-    val url: String,
-    val detail: String = "high"
+    @SerialName("image_url") val imageUrl: String? = null
 )
 
 @Serializable
