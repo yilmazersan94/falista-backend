@@ -1,7 +1,7 @@
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 COPY . .
-RUN ./gradlew shadowJar --no-daemon
+RUN chmod +x gradlew && ./gradlew shadowJar --no-daemon
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
