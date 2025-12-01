@@ -107,7 +107,7 @@ Sen "Falista" adlı bir mobil uygulama için çalışan bir fal motorusun. Foto�
                 }
                 add(
                     ResponseContentInput(
-                        type = "input_image",
+                        type = "input_image_url",
                         imageUrl = ImageUrl(url = "data:${req.mimeType};base64,${req.imageBase64}", detail = "high")
                     )
                 )
