@@ -75,6 +75,8 @@ class OpenAiClient(
 Sen "Falista" adlı bir mobil uygulama için çalışan fal motorusun. Fotoğraf ve kullanıcının notuna dayanarak pozitif, nazik, akıcı ve Türkçe bir fal yaz. Ölüm, hastalık, kara kehanet yok. 120-220 kelime arası uzun, hikâye gibi yaz.
 """.trimIndent()
 
+    private val model = "gpt-4o-mini"
+
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) { json(json) }
         install(Logging) {
@@ -91,34 +93,48 @@ Sen "Falista" adlı bir mobil uygulama için çalışan fal motorusun. Fotoğraf
         if (apiKey.isBlank()) {
             return GenerateFalResponse(success = false, error = "OPENAI_API_KEY missing")
         }
+        if (req.imageBase64.isBlank()) {
+            return GenerateFalResponse(success = false, error = "imageBase64 is required")
+        }
+
         return runCatching {
-            val payload = OpenAiRequest(
-                model = "gpt-5.1",
-                input = listOf(
-                    ContentBlock(type = "input_text", text = systemPrompt),
-                    ContentBlock(
-                        type = "input_image",
-                        imageUrl = ImageUrl(
-                            url = "data:${req.mimeType};base64,${req.imageBase64}",
-                            detail = "high"
-                        )
+            val payload = ChatRequest(
+                model = model,
+                maxTokens = 800,
+                messages = listOf(
+                    ChatMessage(
+                        role = "system",
+                        content = listOf(ContentPart(type = "text", text = systemPrompt))
                     ),
-                    ContentBlock(
-                        type = "input_text",
-                        text = "Kullanıcı notu: ${req.userNote ?: "not yok"}. Tarih: ${req.date ?: "belirtilmedi"}."
+                    ChatMessage(
+                        role = "user",
+                        content = listOf(
+                            ContentPart(
+                                type = "image_url",
+                                imageUrl = ImageUrl(url = "data:${req.mimeType};base64,${req.imageBase64}")
+                            ),
+                            ContentPart(
+                                type = "text",
+                                text = "Kullanıcı notu: ${req.userNote ?: "not yok"}. Tarih: ${req.date ?: "belirtilmedi"}."
+                            )
+                        )
                     )
-                ),
-                maxOutputTokens = 800
+                )
             )
 
-            val response = client.post("https://api.openai.com/v1/responses") {
+            val response = client.post("https://api.openai.com/v1/chat/completions") {
                 contentType(ContentType.Application.Json)
                 headers.append("Authorization", "Bearer $apiKey")
                 setBody(payload)
             }
-            val body: OpenAiResponse = response.body()
-            val fortune = body.output?.firstOrNull { it.type == "output_text" }?.text
-                ?: body.output?.firstOrNull()?.text
+            val body: ChatResponse = response.body()
+            val fortune = body.choices
+                ?.firstOrNull()
+                ?.message
+                ?.content
+                ?.mapNotNull { it.text }
+                ?.joinToString(" ")
+                ?.ifBlank { null }
                 ?: "Fal üretilemedi."
             GenerateFalResponse(success = true, fortuneText = fortune)
         }.getOrElse { ex ->
@@ -128,14 +144,20 @@ Sen "Falista" adlı bir mobil uygulama için çalışan fal motorusun. Fotoğraf
 }
 
 @Serializable
-data class OpenAiRequest(
+data class ChatRequest(
     val model: String,
-    val input: List<ContentBlock>,
-    @SerialName("max_output_tokens") val maxOutputTokens: Int
+    val messages: List<ChatMessage>,
+    @SerialName("max_tokens") val maxTokens: Int
 )
 
 @Serializable
-data class ContentBlock(
+data class ChatMessage(
+    val role: String,
+    val content: List<ContentPart>
+)
+
+@Serializable
+data class ContentPart(
     val type: String,
     val text: String? = null,
     @SerialName("image_url") val imageUrl: ImageUrl? = null
@@ -143,17 +165,20 @@ data class ContentBlock(
 
 @Serializable
 data class ImageUrl(
-    val url: String,
-    val detail: String = "auto"
+    val url: String
 )
 
 @Serializable
-data class OpenAiResponse(
-    val output: List<OutputBlock>? = null
+data class ChatResponse(
+    val choices: List<Choice>? = null
 )
 
 @Serializable
-data class OutputBlock(
-    val type: String,
-    val text: String? = null
+data class Choice(
+    val message: ChatMessageResponse? = null
+)
+
+@Serializable
+data class ChatMessageResponse(
+    val content: List<ContentPart> = emptyList()
 )
