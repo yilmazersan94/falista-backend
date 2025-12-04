@@ -43,6 +43,7 @@ fun Application.module() {
     val openAi = OpenAiClient(apiKey, json)
 
     routing {
+        get("/") { call.respondText("ok") }
         post("/generate-fal") {
             val req = call.receive<GenerateFalRequest>()
             val result = openAi.generateFal(req)
