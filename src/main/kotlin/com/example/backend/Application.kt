@@ -3,6 +3,7 @@ package com.example.backend
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
@@ -69,14 +70,18 @@ class OpenAiClient(
     private val apiKey: String,
     private val json: Json
 ) {
-    private val systemPrompt = """
-Sen "Falista" adlı bir mobil uygulama için çalışan bir fal motorusun. Fotoğraftan ve varsa kullanıcı notundan yola çıkarak pozitif, nazik, akıcı ve Türkçe bir fal yaz. Ölüm, hastalık, kara kehanet yok. 120-220 kelime arası, hikâye gibi uzun yaz.
-""".trimIndent()
+    private val systemPrompt =
+        "Sen \"Falista\" adlı bir mobil uygulama için çalışan bir fal motorusun. Fotoğraftan ve varsa kullanıcı notundan yola çıkarak pozitif, nazik, akıcı ve Türkçe bir fal yaz. Ölüm, hastalık, kara kehanet yok. 120-220 kelime arasına sığdır, hikaye gibi uzun yaz."
 
-    private val model = "gpt-5.1"
+    private val model = "gpt-4o-mini"
 
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) { json(json) }
+        install(HttpTimeout) {
+            requestTimeoutMillis = 120_000
+            connectTimeoutMillis = 30_000
+            socketTimeoutMillis = 120_000
+        }
         install(Logging) {
             logger = object : Logger {
                 override fun log(message: String) {
@@ -101,27 +106,25 @@ Sen "Falista" adlı bir mobil uygulama için çalışan bir fal motorusun. Foto�
         }.ifBlank { null }
 
         return runCatching {
-            val userContents = buildList {
-                if (!userContext.isNullOrBlank()) {
-                    add(ResponseContentInput(type = "input_text", text = userContext))
-                }
+            val contents = buildList {
+                if (!userContext.isNullOrBlank()) add(ChatContent(type = "text", text = userContext))
                 add(
-                    ResponseContentInput(
-                        type = "input_image_url",
-                        imageUrl = ImageUrl(url = "data:${req.mimeType};base64,${req.imageBase64}", detail = "high")
+                    ChatContent(
+                        type = "image_url",
+                        imageUrl = ChatImageUrl(url = "data:${req.mimeType};base64,${req.imageBase64}", detail = "high")
                     )
                 )
             }
-            val userMessage = ResponseMessageInput(role = "user", content = userContents)
-
-            val payload = ResponsesRequest(
+            val payload = ChatCompletionsRequest(
                 model = model,
-                input = listOf(userMessage),
-                instructions = systemPrompt,
-                maxOutputTokens = 800
+                messages = listOf(
+                    ChatMessage(role = "system", content = listOf(ChatContent(type = "text", text = systemPrompt))),
+                    ChatMessage(role = "user", content = contents)
+                ),
+                maxTokens = 800
             )
 
-            val response = client.post("https://api.openai.com/v1/responses") {
+            val response = client.post("https://api.openai.com/v1/chat/completions") {
                 contentType(ContentType.Application.Json)
                 headers.append("Authorization", "Bearer $apiKey")
                 setBody(payload)
@@ -130,11 +133,13 @@ Sen "Falista" adlı bir mobil uygulama için çalışan bir fal motorusun. Foto�
                 val raw = response.bodyAsText()
                 throw IllegalStateException("OpenAI ${response.status.value}: $raw")
             }
-            val body: ResponsesResponse = response.body()
-            val fortune = body.output
-                ?.flatMap { it.content.orEmpty() }
-                ?.firstOrNull { it.type == "output_text" }
-                ?.text
+            val body: ChatCompletionsResponse = response.body()
+            val fortune = body.choices
+                .firstOrNull()
+                ?.message
+                ?.content
+                ?.joinToString("\n") { it.text.orEmpty() }
+                ?.takeIf { it.isNotBlank() }
                 ?: "Fal üretilemedi."
             GenerateFalResponse(success = true, fortuneText = fortune)
         }.getOrElse { ex ->
@@ -144,45 +149,49 @@ Sen "Falista" adlı bir mobil uygulama için çalışan bir fal motorusun. Foto�
 }
 
 @Serializable
-data class ResponsesRequest(
+data class ChatCompletionsRequest(
     val model: String,
-    val input: List<ResponseMessageInput>,
-    val instructions: String,
-    @SerialName("max_output_tokens") val maxOutputTokens: Int
+    val messages: List<ChatMessage>,
+    @SerialName("max_tokens") val maxTokens: Int
 )
 
 @Serializable
-data class ResponseMessageInput(
+data class ChatMessage(
     val role: String,
-    val content: List<ResponseContentInput>
+    val content: List<ChatContent>
 )
 
 @Serializable
-data class ResponseContentInput(
+data class ChatContent(
     val type: String,
     val text: String? = null,
-    @SerialName("image_url") val imageUrl: ImageUrl? = null
+    @SerialName("image_url") val imageUrl: ChatImageUrl? = null
 )
 
 @Serializable
-data class ImageUrl(
+data class ChatImageUrl(
     val url: String,
     val detail: String = "high"
 )
 
 @Serializable
-data class ResponsesResponse(
-    val output: List<ResponseMessage>? = null
+data class ChatCompletionsResponse(
+    val choices: List<ChatChoice>
 )
 
 @Serializable
-data class ResponseMessage(
-    val role: String? = null,
-    val content: List<ResponseContent>? = null
+data class ChatChoice(
+    val message: ChatMessageOutput
 )
 
 @Serializable
-data class ResponseContent(
+data class ChatMessageOutput(
+    val role: String,
+    val content: List<ChatContentOutput>
+)
+
+@Serializable
+data class ChatContentOutput(
     val type: String,
     val text: String? = null
 )
