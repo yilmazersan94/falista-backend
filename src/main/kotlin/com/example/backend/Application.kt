@@ -91,7 +91,7 @@ class OpenAiClient(
                     println("[OpenAI] $message")
                 }
             }
-            level = LogLevel.INFO
+            level = LogLevel.BODY
         }
     }
 
@@ -114,7 +114,7 @@ class OpenAiClient(
                 add(
                     ChatContent(
                         type = "image_url",
-                        imageUrl = ChatImageUrl(url = "data:${req.mimeType};base64,${req.imageBase64}", detail = "high")
+                        imageUrl = "data:${req.mimeType};base64,${req.imageBase64}"
                     )
                 )
             }
@@ -168,13 +168,7 @@ data class ChatMessage(
 data class ChatContent(
     val type: String,
     val text: String? = null,
-    @SerialName("image_url") val imageUrl: ChatImageUrl? = null
-)
-
-@Serializable
-data class ChatImageUrl(
-    val url: String,
-    val detail: String = "high"
+    @SerialName("image_url") val imageUrl: String? = null
 )
 
 @Serializable
