@@ -223,7 +223,7 @@ JSON ?EMASI:
             contentElement is JsonObject -> primitiveContentOrNull(contentElement["text"])
             contentElement is JsonElement && contentElement.jsonArray.isNotEmpty() -> {
                 contentElement.jsonArray
-                    .firstOrNull { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "text" }
+                    .firstOrNull { it.jsonObject["type"]?.jsonPrimitive?.content == "text" }
                     ?.jsonObject
                     ?.get("text")
                     ?.let { primitiveContentOrNull(it) }
