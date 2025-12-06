@@ -190,13 +190,19 @@ JSON ?EMASI:
             val root = json.parseToJsonElement(bodyText).jsonObject
             val rawContent = extractContentText(root)
                 ?: error("BoY OpenAI yanŽñtŽñ")
+            val cleaned = rawContent
+                .removePrefix("```json")
+                .removePrefix("```JSON")
+                .removePrefix("```")
+                .removeSuffix("```")
+                .trim()
 
-            val parsed = runCatching { json.decodeFromString<FortuneResponse>(rawContent) }.getOrNull()
+            val parsed = runCatching { json.decodeFromString<FortuneResponse>(cleaned) }.getOrNull()
 
             GenerateFalResponse(
                 success = parsed != null,
                 fortune = parsed,
-                fortuneText = parsed?.fortuneText ?: rawContent,
+                fortuneText = parsed?.fortuneText ?: cleaned,
                 error = parsed?.let { null } ?: "Model JSON YemasŽñna uymadŽñ, ham metin dÇ¬ndÇ¬."
             )
         }.getOrElse { ex ->
@@ -230,6 +236,11 @@ JSON ?EMASI:
             }
             else -> primitiveContentOrNull(contentElement)
         }?.takeIf { it.isNotBlank() }
+    }
+
+    private fun primitiveContentOrNull(element: JsonElement?): String? {
+        val primitive = element?.jsonPrimitive ?: return null
+        return if (primitive.isString) primitive.content else null
     }
 }
 
