@@ -198,13 +198,16 @@ JSON ?EMASI:
                 .trim()
 
             val parsed = runCatching { json.decodeFromString<FortuneResponse>(cleaned) }.getOrNull()
-
-            GenerateFalResponse(
-                success = parsed != null,
-                fortune = parsed,
-                fortuneText = parsed?.fortuneText ?: cleaned,
-                error = parsed?.let { null } ?: "Model JSON YemasŽñna uymadŽñ, ham metin dÇ¬ndÇ¬."
-            )
+            if (parsed != null) {
+                GenerateFalResponse(success = true, fortune = parsed)
+            } else {
+                GenerateFalResponse(
+                    success = true,
+                    fortune = fallbackFortune(cleaned),
+                    fortuneText = cleaned,
+                    error = null
+                )
+            }
         }.getOrElse { ex ->
             GenerateFalResponse(success = false, error = ex.message ?: "Bilinmeyen hata")
         }
@@ -224,11 +227,11 @@ JSON ?EMASI:
             return if (primitive.isString) primitive.content else null
         }
 
-        return when {
-            contentElement == null -> null
-            contentElement is JsonObject -> primitiveContentOrNull(contentElement["text"])
-            contentElement is JsonElement && contentElement.jsonArray.isNotEmpty() -> {
-                contentElement.jsonArray
+        return when (contentElement) {
+            null -> null
+            is JsonObject -> primitiveContentOrNull(contentElement["text"])
+            is kotlinx.serialization.json.JsonArray -> {
+                contentElement
                     .firstOrNull { it.jsonObject["type"]?.jsonPrimitive?.content == "text" }
                     ?.jsonObject
                     ?.get("text")
@@ -241,6 +244,23 @@ JSON ?EMASI:
     private fun primitiveContentOrNull(element: JsonElement?): String? {
         val primitive = element?.jsonPrimitive ?: return null
         return if (primitive.isString) primitive.content else null
+    }
+
+    private fun fallbackFortune(fortuneText: String): FortuneResponse {
+        val aura = Aura("Mystic", "#7256F0", "Sezgileri besleyen yumuYak bir aura.")
+        val energy = kotlin.random.Random.nextInt(60, 96)
+        return FortuneResponse(
+            title = "Fal",
+            energyScore = energy,
+            moodTag = "calm",
+            aura = aura,
+            symbols = emptyList(),
+            fortuneText = fortuneText,
+            closingMessage = "Nazik adŽñmlarŽñn seni gÇ¬venli bir yola taYŽñyor.",
+            dailyMessageShort = "BugÇ¬n sakin kal, ŽñYŽñŽYŽñn belirginleYiyor.",
+            luckyEmoji = listOf("§Y??", "ƒoù", "§YOt", "§YO¯", "§Y'®").random(),
+            luckyNumber = kotlin.random.Random.nextInt(1, 99)
+        )
     }
 }
 
