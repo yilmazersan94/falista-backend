@@ -27,8 +27,12 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 fun main(args: Array<String>) {
     io.ktor.server.netty.EngineMain.main(args)
@@ -182,13 +186,9 @@ JSON ?EMASI:
                 throw IllegalStateException("OpenAI ${response.status.value}: $raw")
             }
 
-            val body: ChatCompletionsResponse = response.body()
-            val rawContent = body.choices.firstOrNull()
-                ?.message
-                ?.content
-                ?.firstOrNull { it.type == "text" }
-                ?.text
-                ?.takeIf { it.isNotBlank() }
+            val bodyText = response.bodyAsText()
+            val root = json.parseToJsonElement(bodyText).jsonObject
+            val rawContent = extractContentText(root)
                 ?: error("BoY OpenAI yanŽñtŽñ")
 
             val parsed = runCatching { json.decodeFromString<FortuneResponse>(rawContent) }.getOrNull()
@@ -202,6 +202,30 @@ JSON ?EMASI:
         }.getOrElse { ex ->
             GenerateFalResponse(success = false, error = ex.message ?: "Bilinmeyen hata")
         }
+    }
+
+    private fun extractContentText(root: JsonObject): String? {
+        val contentElement: JsonElement? = root["choices"]
+            ?.jsonArray
+            ?.firstOrNull()
+            ?.jsonObject
+            ?.get("message")
+            ?.jsonObject
+            ?.get("content")
+
+        return when {
+            contentElement == null -> null
+            contentElement is JsonObject -> contentElement["text"]?.jsonPrimitive?.contentOrNull
+            contentElement is JsonElement && contentElement.jsonArray.isNotEmpty() -> {
+                contentElement.jsonArray
+                    .firstOrNull { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "text" }
+                    ?.jsonObject
+                    ?.get("text")
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+            }
+            else -> contentElement.jsonPrimitive.contentOrNull
+        }?.takeIf { it.isNotBlank() }
     }
 }
 
