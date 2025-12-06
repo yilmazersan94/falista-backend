@@ -39,6 +39,7 @@ fun Application.module() {
         prettyPrint = false
         ignoreUnknownKeys = true
         encodeDefaults = true
+        explicitNulls = false
     }
     install(ServerContentNegotiation) { json(json) }
 
