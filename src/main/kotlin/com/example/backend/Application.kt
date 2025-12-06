@@ -27,6 +27,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
 fun main(args: Array<String>) {
@@ -65,6 +66,7 @@ data class GenerateFalRequest(
 @Serializable
 data class GenerateFalResponse(
     val success: Boolean,
+    val fortune: FortuneResponse? = null,
     val fortuneText: String? = null,
     val error: String? = null
 )
@@ -73,8 +75,50 @@ class OpenAiClient(
     private val apiKey: String,
     private val json: Json
 ) {
-    private val systemPrompt =
-        "Sen \"Falista\" adlı bir mobil uygulama için çalışan bir fal motorusun. Fotoğraftan ve varsa kullanıcı notundan yola çıkarak pozitif, nazik, akıcı ve Türkçe bir fal yaz. Ölüm, hastalık, kara kehanet yok. 120-220 kelime arasına sığdır, hikaye gibi uzun yaz."
+    private val systemPrompt: String = """
+Sen "Falista" adlŽñ bir mobil uygulama iÇõin ÇõalŽñYan bir fal motorusun.
+
+GÇôrevin:
+- KullanŽñcŽñnŽñ gÇônderdiŽYi FOTOŽ?RAFTAN yola ÇõŽñkarak,
+- TÇ¬rkÇõe dilinde,
+- Pozitif, gerÇõekÇõi, nazik ve sakin bir tonda,
+- AnlamlŽñ, akŽñcŽñ ve duygulu bir gÇ¬nlÇ¬k fal metni ve ilgili alanlarŽñ Ç¬retmek.
+
+Kurallar:
+- Her zaman TÇoRKÇÅE yaz.
+- Yapay zeka olduŽYunu belirtme.
+- Ç-lÇ¬m, ciddi hastalŽñk, bÇ¬yÇ¬, lanet, muska, kara kehanet, felaket, korkutucu veya riskli temalara GŽøRME.
+- Kesin tarihli/tam kesin gelecek tahminleri verme.
+- Finansal, hukuki, tŽñbbi kararlar iÇõin net tavsiye verme.
+- Her zaman sakin, gÇ¬ÇõlÇ¬, motive eden bir Ç¬slup kullan.
+- FotoŽYraftaki ŽñYŽñk, renk, nesneler ve kompozisyondan semboller ÇõŽñkar ve fal metnine yedir.
+- Fal metni HER ZAMAN uzun olsun: minimum 140 kelime, maksimum ~220 kelime.
+- ÇÅIKTI SADECE JSON olsun.
+- JSON YemasŽñna harfiyen uy, baYka hiÇõbir aÇõŽñklama ekleme.
+
+JSON ?EMASI:
+{
+  "title": "2ƒ?"5 kelimelik kŽñsa baYlŽñk",
+  "energy_score": 0-100,
+  "mood_tag": "calm | hopeful | confident | romantic | reflective gibi tek kelime",
+  "aura": {
+    "color_name": "Rengin TÇ¬rkÇõe ismi",
+    "color_hex": "#HEX",
+    "meaning": "Bu aura renginin 1ƒ?"3 cÇ¬mlelik aÇõŽñklamasŽñ"
+  },
+  "symbols": [
+    {
+      "name": "Sembol adŽñ",
+      "description": "FotoŽYrafta nasŽñl belirdiŽYi ve fal anlamŽñ"
+    }
+  ],
+  "fortune_text": "3ƒ?"6 paragraf, 140ƒ?"220 kelime, sŽñcak ve akŽñcŽñ bir fal metni",
+  "closing_message": "1ƒ?"2 cÇ¬mlelik kapanŽñY Çônerisi",
+  "daily_message_short": "Tek cÇ¬mlelik gÇ¬n mesajŽñ",
+  "lucky_emoji": "Emojilerden biri: §Y?? ƒoù §YOt §YO¯ §Y'®",
+  "lucky_number": "1ƒ?"99 arasŽñ tam sayŽñ"
+}
+""".trimIndent()
 
     private val model = "gpt-4o-mini"
 
@@ -104,7 +148,7 @@ class OpenAiClient(
         }
 
         val userContext = buildString {
-            if (!req.userNote.isNullOrBlank()) append("Kullanıcı notu: ${req.userNote}. ")
+            if (!req.userNote.isNullOrBlank()) append("KullanŽñcŽñ notu: ${req.userNote}. ")
             if (!req.date.isNullOrBlank()) append("Tarih: ${req.date}.")
         }.ifBlank { null }
 
@@ -114,7 +158,7 @@ class OpenAiClient(
                 add(
                     ChatContent(
                         type = "image_url",
-                        imageUrl = "data:${req.mimeType};base64,${req.imageBase64}"
+                        imageUrl = ChatImageUrl(url = "data:${req.mimeType};base64,${req.imageBase64}")
                     )
                 )
             }
@@ -136,15 +180,24 @@ class OpenAiClient(
                 val raw = response.bodyAsText()
                 throw IllegalStateException("OpenAI ${response.status.value}: $raw")
             }
+
             val body: ChatCompletionsResponse = response.body()
-            val fortune = body.choices
-                .firstOrNull()
+            val rawContent = body.choices.firstOrNull()
                 ?.message
                 ?.content
-                ?.joinToString("\n") { it.text.orEmpty() }
+                ?.firstOrNull { it.type == "text" }
+                ?.text
                 ?.takeIf { it.isNotBlank() }
-                ?: "Fal üretilemedi."
-            GenerateFalResponse(success = true, fortuneText = fortune)
+                ?: error("BoY OpenAI yanŽñtŽñ")
+
+            val parsed = runCatching { json.decodeFromString<FortuneResponse>(rawContent) }.getOrNull()
+
+            GenerateFalResponse(
+                success = parsed != null,
+                fortune = parsed,
+                fortuneText = parsed?.fortuneText ?: rawContent,
+                error = parsed?.let { null } ?: "Model JSON YemasŽñna uymadŽñ, ham metin dÇ¬ndÇ¬."
+            )
         }.getOrElse { ex ->
             GenerateFalResponse(success = false, error = ex.message ?: "Bilinmeyen hata")
         }
@@ -168,7 +221,13 @@ data class ChatMessage(
 data class ChatContent(
     val type: String,
     val text: String? = null,
-    @SerialName("image_url") val imageUrl: String? = null
+    @SerialName("image_url") val imageUrl: ChatImageUrl? = null
+)
+
+@Serializable
+data class ChatImageUrl(
+    val url: String,
+    val detail: String? = "auto"
 )
 
 @Serializable
@@ -191,4 +250,31 @@ data class ChatMessageOutput(
 data class ChatContentOutput(
     val type: String,
     val text: String? = null
+)
+
+@Serializable
+data class FortuneResponse(
+    val title: String,
+    @SerialName("energy_score") val energyScore: Int,
+    @SerialName("mood_tag") val moodTag: String,
+    val aura: Aura,
+    val symbols: List<FortuneSymbol>,
+    @SerialName("fortune_text") val fortuneText: String,
+    @SerialName("closing_message") val closingMessage: String,
+    @SerialName("daily_message_short") val dailyMessageShort: String,
+    @SerialName("lucky_emoji") val luckyEmoji: String,
+    @SerialName("lucky_number") val luckyNumber: Int
+)
+
+@Serializable
+data class Aura(
+    @SerialName("color_name") val colorName: String,
+    @SerialName("color_hex") val colorHex: String,
+    val meaning: String
+)
+
+@Serializable
+data class FortuneSymbol(
+    val name: String,
+    val description: String
 )
