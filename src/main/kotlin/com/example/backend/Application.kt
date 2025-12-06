@@ -213,18 +213,22 @@ JSON ?EMASI:
             ?.jsonObject
             ?.get("content")
 
+        fun primitiveContentOrNull(element: JsonElement?): String? {
+            val primitive = element?.jsonPrimitive ?: return null
+            return if (primitive.isString) primitive.content else null
+        }
+
         return when {
             contentElement == null -> null
-            contentElement is JsonObject -> contentElement["text"]?.jsonPrimitive?.contentOrNull
+            contentElement is JsonObject -> primitiveContentOrNull(contentElement["text"])
             contentElement is JsonElement && contentElement.jsonArray.isNotEmpty() -> {
                 contentElement.jsonArray
                     .firstOrNull { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "text" }
                     ?.jsonObject
                     ?.get("text")
-                    ?.jsonPrimitive
-                    ?.contentOrNull
+                    ?.let { primitiveContentOrNull(it) }
             }
-            else -> contentElement.jsonPrimitive.contentOrNull
+            else -> primitiveContentOrNull(contentElement)
         }?.takeIf { it.isNotBlank() }
     }
 }
